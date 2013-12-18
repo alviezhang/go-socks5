@@ -1,6 +1,3 @@
-package main
-
-
 //
 // Socks5 proxy in Go
 // (c) 2013 Sudhi Herle <sw-at-herle.net>
@@ -14,6 +11,8 @@ package main
 //    * if explictly allowed, allow the host
 //    * explicit denial takes precedence over allow
 //    * empty allow is same as "allow all"
+
+package main
 
 import (
     "net"
@@ -29,6 +28,7 @@ import (
     "time"
     "sync/atomic"
     "os/signal"
+    "runtime"
 )
 
 import L "./logger"
@@ -676,6 +676,8 @@ func main() {
         log.Info("writing URL logs to %s", cfg.URLLog)
     }
 
+    // maxout concurrency
+    runtime.GOMAXPROCS(runtime.NumCPU())
 
     // Now create a new proxy instance for each listenr in the
     // config file

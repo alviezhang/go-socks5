@@ -1,0 +1,18 @@
+
+#
+# Manifest for debian version of gosocksd
+#
+
+# Install the package in this dir first
+!go build -o %(debdir)s/usr/bin/gosocksd socksd.go
+
+cp %(templatedir)s/socksd.conf   /etc/gosocksd/socksd.conf
+
+cp %(templatedir)s/socksd.conf   /usr/share/doc/gosocksd/socksd.conf
+cp %(templatedir)s/../README     /usr/share/doc/gosocksd/README.Debian
+
+# Startup script
+cp %(templatedir)s/gosocksd.init       /etc/init.d/gosocksd
+
+# EOF
+
