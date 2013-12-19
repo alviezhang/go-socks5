@@ -9,7 +9,7 @@
 cp %(templatedir)s/socksd.conf   /etc/gosocksd/socksd.conf
 
 cp %(templatedir)s/socksd.conf   /usr/share/doc/gosocksd/socksd.conf
-cp %(templatedir)s/../README     /usr/share/doc/gosocksd/README.Debian
+cp %(srcdir)s/README     /usr/share/doc/gosocksd/README.Debian
 
 # Startup script
 cp %(templatedir)s/gosocksd.init       /etc/init.d/gosocksd
