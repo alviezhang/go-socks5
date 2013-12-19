@@ -8,6 +8,7 @@
 
 cp %(templatedir)s/socksd.conf   /etc/gosocksd/socksd.conf
 
+cp %(templatedir)s/etc.default   /etc/default/gosocksd
 cp %(templatedir)s/socksd.conf   /usr/share/doc/gosocksd/socksd.conf
 cp %(srcdir)s/README     /usr/share/doc/gosocksd/README.Debian
 

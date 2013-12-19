@@ -20,6 +20,7 @@ DAEMON=/usr/bin/gosocksd
 NAME=gosocksd
 DESC="gosocksd SOCKS server"
 CONF="/etc/gosocksd/socksd.conf"
+DEF="/etc/default/gosocksd"
 
 # XXX Change uid/gid to some benign value
 UID=nobody
@@ -28,13 +29,18 @@ GID=nogroup
 test -x $DAEMON || exit 0
 test -f $CONF   || exit 0
 
-OPTIONS="$CONF"
-if [ -f /etc/default/gosocksd ]; then
-    . /etc/default/gosocksd
+if [ -f "$DEF" ]; then
+    . $DEF
+fi
+
+if [ "$ENABLED" = "0" ]; then
+    echo "$DESC disabled; see $DEF"
+    exit 0
 fi
 
 set -e
 
+OPTIONS="$CONF"
 case "$1" in
   start)
 	echo -n "Starting $DESC: $NAME"
