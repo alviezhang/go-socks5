@@ -1,6 +1,6 @@
 //
 // Socks5 proxy in Go
-// (c) 2013 Sudhi Herle <sw-at-herle.net>
+// (c) 2013 Sudhi Herle <sudhi-dot-herle-at-gmail-com>
 //
 // License: GPLv2
 //
@@ -46,20 +46,37 @@ type Methods struct {
 }
 
 
-// URL Logger - simplified output format
-// We have this type to override io.Writer
+// URL Logger - log URLs and bytes transferred
+// - Does synchronous writes to the underlying file.
+// - Writes are queued into a channel; a go routine picks off messages
+//   from the channel and writes to disk.
 type urllog struct {
     fd *os.File
     n  int
+    logch chan string
 }
 
 func NewURLLogger(fn string) (ul *urllog, err error) {
-    fd, err := os.OpenFile(fn, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
-    if err == nil {
-        ul = &urllog{fd: fd}
+
+    // append or truncate??
+    flags := os.O_WRONLY|os.O_CREATE|os.O_SYNC
+    flags |= os.O_APPEND
+    fd, err := os.OpenFile(fn, flags, 0644)
+    if err != nil {
+        return nil, err
     }
 
-    return
+    ul = &urllog{fd: fd}
+    ul.logch = make(chan string, 512)
+
+    // Now fork a go routine to do synchronous log writes
+    go func(l *urllog) {
+        for s := range ul.logch {
+            ul.fd.Write([]byte(s))
+        }
+    }(ul)
+
+    return ul, nil
 }
 
 
@@ -80,12 +97,7 @@ func (l *urllog) LogURL(ls, rs, url string, l2r, r2l int64) {
 
     s += "\n"
 
-    l.fd.Write([]byte(s))
-    l.n++
-    if l.n >= 100 {
-        l.n = 0
-        l.fd.Sync()
-    }
+    l.logch <- s
 }
 
 
@@ -192,6 +204,10 @@ func (px *socksProxy) start() {
         }
 
         // Fork off a handler for this new connection
+        // XXX Don't have too many concurrent go-routines -
+        //     unbounded resource exhaustion?
+        //     Create a config file setting to limit the
+        //     concurrency..
         go px.Proxy(conn)
     }
 }
