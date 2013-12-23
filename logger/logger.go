@@ -137,14 +137,35 @@ type Logger struct {
     prefix string     // prefix to write at beginning of each line
     flag   int        // properties
     out    io.Writer  // destination for output
+    logch chan string // for doing async (background) I/O
+}
+
+
+
+// make a async goroutine for doing actual I/O 
+func newLogger(ll *Logger) (*Logger, error) {
+
+    ll.logch = make(chan string)
+
+    // Now fork a go routine to do synchronous log writes
+    ff := func(l *Logger) {
+        for {
+            s := <-l.logch
+            l.out.Write([]byte(s))
+        }
+    }
+
+    go ff(ll)
+
+    return ll, nil
 }
 
 // New creates a new Logger.   The out variable sets the
 // destination to which log data will be written.
 // The prefix appears at the beginning of each generated log line.
 // The flag argument defines the logging properties.
-func New(out io.Writer, prio Priority, prefix string, flag int) *Logger {
-    return &Logger{out: out, prio: prio, prefix: prefix, flag: flag}
+func New(out io.Writer, prio Priority, prefix string, flag int) (*Logger, error) {
+    return newLogger(&Logger{out: out, prio: prio, prefix: prefix, flag: flag})
 }
 
 
@@ -152,13 +173,13 @@ func New(out io.Writer, prio Priority, prefix string, flag int) *Logger {
 // This function erases the previous file contents.
 func NewFilelog(file string, prio Priority, prefix string, flag int) (*Logger, error) {
 
-    logfd, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE, 0600)
+    logfd, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_SYNC, 0600)
     if err != nil {
         s := fmt.Sprintf("Can't open log file '%s': %s", file, err)
         return nil, errors.New(s)
     }
 
-    return &Logger{out: logfd, prio: prio, prefix: prefix, flag: flag}, nil
+    return newLogger(&Logger{out: logfd, prio: prio, prefix: prefix, flag: flag})
 }
 
 
@@ -171,7 +192,7 @@ func NewSyslog(prio Priority, prefix string, flag int) (*Logger, error) {
         return nil, errors.New(s)
     }
 
-    return &Logger{out: wr, prio: prio, prefix: prefix, flag: flag}, nil
+    return newLogger(&Logger{out: wr, prio: prio, prefix: prefix, flag: flag})
 }
 
 // Create a new file logger or syslog logger
@@ -185,11 +206,10 @@ func NewLogger(name string, prio Priority, prefix string, flag int) (*Logger, er
 
 // Cheap integer to fixed-width decimal ASCII.  Give a negative width to avoid zero-padding.
 // Knows the buffer has capacity.
-func itoa(buf *[]byte, i int, wid int) {
+func itoa(i int, wid int) string {
     var u uint = uint(i)
     if u == 0 && wid <= 1 {
-        *buf = append(*buf, '0')
-        return
+        return "0"
     }
 
     // Assemble decimal in reverse order.
@@ -200,39 +220,41 @@ func itoa(buf *[]byte, i int, wid int) {
         wid--
         b[bp] = byte(u%10) + '0'
     }
-    *buf = append(*buf, b[bp:]...)
+
+    return string(b[bp:])
 }
 
-func (l *Logger) formatHeader(t time.Time) []byte {
-    var buf []byte
+func (l *Logger) formatHeader(t time.Time) string {
+    var s string
 
     //*buf = append(*buf, l.prefix...)
     if l.flag&(Ldate|Ltime|Lmicroseconds) != 0 {
         if l.flag&Ldate != 0 {
             year, month, day := t.Date()
-            itoa(&buf, year, 4)
-            buf = append(buf, '/')
-            itoa(&buf, int(month), 2)
-            buf = append(buf, '/')
-            itoa(&buf, day, 2)
+            s += itoa(year, 4)
+            s += "/"
+            s += itoa(int(month), 2)
+            s += "/"
+            s += itoa(day, 2)
         }
         if l.flag&(Ltime|Lmicroseconds) != 0 {
-            buf = append(buf, ' ')
             hour, min, sec := t.Clock()
-            itoa(&buf, hour, 2)
-            buf = append(buf, ':')
-            itoa(&buf, min, 2)
-            buf = append(buf, ':')
-            itoa(&buf, sec, 2)
+
+            s += " "
+            s += itoa(hour, 2)
+            s += ":"
+            s += itoa(min, 2)
+            s += ":"
+            s += itoa(sec, 2)
             if l.flag&Lmicroseconds != 0 {
-                buf = append(buf, '.')
-                itoa(&buf, t.Nanosecond()/1e3, 6)
+                s += "."
+                s += itoa(t.Nanosecond()/1e3, 6)
             }
         }
 
-        buf = append(buf, ' ')
+        s += " "
     }
-    return buf
+    return s
 }
 
 // Output writes the output for a logging event.  The string s contains
@@ -248,11 +270,11 @@ func (l *Logger) Output(calldepth int, prio Priority, s string) error {
 
     now := time.Now() // get this early.
 
-    var b []byte = l.formatHeader(now)
-    var buf []byte
+    var b string = l.formatHeader(now)
+    var buf string
 
-    buf = append(buf, fmt.Sprintf("<%d>:", prio)...)
-    buf = append(buf, b...)
+    buf  = fmt.Sprintf("<%d>:", prio)
+    buf += b
 
     if calldepth > 0 {
         var file string
@@ -279,18 +301,19 @@ func (l *Logger) Output(calldepth int, prio Priority, s string) error {
         }
 
         if len(finfo) > 0 {
-            buf = append(buf, finfo...)
+            buf += finfo
         }
     }
 
 
     //buf = append(buf, fmt.Sprintf(":<%d>: ", prio)...)
-    buf = append(buf, s...)
+    buf += s
     if s[len(s)-1] != '\n' {
-        buf = append(buf, '\n')
+        buf += "\n"
     }
-    _, err := l.out.Write(buf)
-    return err
+
+    l.logch <- buf
+    return nil
 }
 
 // Dump stack backtrace for 'depth' levels
@@ -325,7 +348,7 @@ func (l* Logger) Backtrace(depth int) {
     v = append(v, "\n")
 
     str := "Backtrace:\n    " + strings.Join(v, "\n    ")
-    l.out.Write([]byte(str))
+    l.logch <- str
 }
 
 

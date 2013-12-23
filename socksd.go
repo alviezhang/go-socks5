@@ -67,12 +67,12 @@ func NewURLLogger(fn string) (ul *urllog, err error) {
     }
 
     ul = &urllog{fd: fd}
-    ul.logch = make(chan string, 512)
+    ul.logch = make(chan string)
 
     // Now fork a go routine to do synchronous log writes
     go func(l *urllog) {
-        for s := range ul.logch {
-            ul.fd.Write([]byte(s))
+        for s := range l.logch {
+            l.fd.Write([]byte(s))
         }
     }(ul)
 
