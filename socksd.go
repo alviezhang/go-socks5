@@ -47,9 +47,9 @@ type Methods struct {
 
 
 // URL Logger - log URLs and bytes transferred
-// - Does synchronous writes to the underlying file.
 // - Writes are queued into a channel; a go routine picks off messages
 //   from the channel and writes to disk.
+// - Does synchronous writes to the underlying file.
 type urllog struct {
     fd *os.File
     n  int
@@ -104,22 +104,15 @@ func (l *urllog) LogURL(ls, rs, url string, l2r, r2l int64) {
 // Socks Proxy config
 // A listenr and its ACL
 type socksProxy struct {
-    // Listener
-    listen  net.Listener
-
-    bind    net.Addr
-
-    // Shortcut to logger
-    log     *L.Logger
-
-    // URL Logger
-    ulog    *urllog
-
-    // The listener config + ACL
-    cfg     configEntry
+    listen  net.Listener // Listener
+    bind    net.Addr     // address to bind to when connect to remote
+    log     *L.Logger    // Shortcut to logger
+    ulog    *urllog      // URL Logger
+    cfg     configEntry  // The listener config + ACL
 }
 
 
+// Make a new proxy server
 func newProxy(cfg configEntry, log *L.Logger, ul *urllog) (px *socksProxy, err error) {
     ln, err := net.Listen("tcp", cfg.Listen)
     if err != nil {
@@ -147,7 +140,7 @@ func (px *socksProxy) AclOK(conn net.Conn) bool {
     cfg := px.cfg
     h, ok  := conn.RemoteAddr().(*net.TCPAddr)
     if !ok {
-        die("%s Can't assert TCPAddr??", conn.RemoteAddr().String())
+        die("%s Can't get TCPAddr from Conn object?!", conn.RemoteAddr().String())
     }
 
     for _, n := range cfg.Deny {
@@ -171,6 +164,8 @@ func (px *socksProxy) AclOK(conn net.Conn) bool {
 
 // start the proxy
 // Caller is expected to kick this off as a go-routine
+// XXX Need to rate limit - do we do it per source IP?
+// XXX Also need a global limit on total concurrent connections?
 func (px *socksProxy) start() {
     ln   := px.listen
     log  := px.log
