@@ -32,6 +32,7 @@ import (
 )
 
 import L "./logger"
+import "./ratelimit"
 
 var debug = flag.Bool("debug", false, "Run in debug mode")
 
@@ -109,6 +110,8 @@ type socksProxy struct {
     log     *L.Logger    // Shortcut to logger
     ulog    *urllog      // URL Logger
     cfg     configEntry  // The listener config + ACL
+
+    rl      *ratelimit.Ratelimiter
 }
 
 
@@ -130,6 +133,9 @@ func newProxy(cfg configEntry, log *L.Logger, ul *urllog) (px *socksProxy, err e
     }
 
     px = &socksProxy{listen: ln, bind: addr, log: log, ulog: ul, cfg: cfg}
+
+    rl, err := ratelimit.NewRateLimiter(cfg.Rlimit)
+    px.rl = rl
     return
 }
 
@@ -198,11 +204,14 @@ func (px *socksProxy) start() {
             continue
         }
 
+        // Ratelimit
+        if px.rl.Limit() {
+            conn.Close()
+            log.Debug("Ratelimited %s", rem)
+            continue
+        }
+
         // Fork off a handler for this new connection
-        // XXX Don't have too many concurrent go-routines -
-        //     unbounded resource exhaustion?
-        //     Create a config file setting to limit the
-        //     concurrency..
         go px.Proxy(conn)
     }
 }
@@ -542,6 +551,9 @@ type configEntry struct {
 
     // Optional source to bind to
     Bind    string      `json:"bind"`
+
+    // Optional ratelimit in conn/sec
+    Rlimit  int         `json:"ratelimit"`
 
     Allow   []subnet      `json:"allow"`
     Deny    []subnet      `json:"deny"`
