@@ -303,24 +303,26 @@ func (px *socksProxy) Proxy(lhs net.Conn) {
     }
 }
 
+// normalize certain types of error as benign
+func normalize_err(e error) error {
+    switch {
+    case e.(net.Error).Timeout():
+        e = nil
+    case e == syscall.EPIPE:
+        e = nil
+    }
 
+    return e
+}
+
+
+// Read from 'r' and write to 'w'
+// Return number of bytes written
 func netcopy(w io.Writer, r io.Reader) (n int64, err error) {
 
     buf := make([]byte, 16 * 1024)
     n    = 0
 
-
-    // normalize certain types of error as benign
-    norm := func(e error) error {
-        switch {
-        case e.(net.Error).Timeout():
-            e = nil
-        case e == syscall.EPIPE:
-            e = nil
-        }
-
-        return e
-    }
     for {
         nr, er := r.Read(buf)
         if nr == 0 {
@@ -330,7 +332,7 @@ func netcopy(w io.Writer, r io.Reader) (n int64, err error) {
             for nr > 0 {
                 nw, ew := w.Write(buf[i:nr])
                 if ew != nil {
-                    ew = norm(ew)
+                    ew = normalize_err(ew)
                     return n, ew
                 }
 
@@ -343,7 +345,7 @@ func netcopy(w io.Writer, r io.Reader) (n int64, err error) {
         if er == io.EOF {
             break
         } else if er != nil {
-            er = norm(er)
+            er = normalize_err(er)
             return n, er
         }
     }
@@ -352,6 +354,8 @@ func netcopy(w io.Writer, r io.Reader) (n int64, err error) {
 }
 
 
+// go routine to read from 'r' and write to 'w'.
+// The return values are sent back in the channel 'retval'
 func serv(w io.Writer, r io.Reader, rv chan<- retval) {
     atomic.AddInt64(&Ngo_started, 1)
     defer func() {
@@ -510,8 +514,10 @@ func (px *socksProxy) doConnect(lhs net.Conn) (rhs net.Conn, s string, err error
     log.Debug("Connecting to %s ..\n", s)
 
 
-    // XXX Set and manage resolver timeout and connect timeout
-    tout, _ := time.ParseDuration("3m")
+    tout := time.Duration(px.cfg.Conn_tout) * time.Second
+    if tout <= 0 {
+        tout, _ = time.ParseDuration("4s")
+    }
     d := &net.Dialer{LocalAddr: px.bind, Timeout: tout}
 
 
@@ -554,6 +560,9 @@ type configEntry struct {
 
     // Optional ratelimit in conn/sec
     Rlimit  int         `json:"ratelimit"`
+
+    // Timeout in seconds for outbound connect requests
+    Conn_tout  int      `json:"connect_timeout"`
 
     Allow   []subnet      `json:"allow"`
     Deny    []subnet      `json:"deny"`
