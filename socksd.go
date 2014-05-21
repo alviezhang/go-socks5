@@ -568,6 +568,9 @@ type configFile struct {
     // If this is non-null, log URLs + timestamp to this file
     URLLog      string      `json:"urllog"`
 
+    // socket for monitoring internals of this daemon
+    // XXX Think of using gmx
+    Monitor     string      `json:"monitor"`
 
     // If this is non-null, enable HTTP server on this address
     //HTTPServer  string      `json:"http"`
@@ -701,6 +704,10 @@ func main() {
 
     // maxout concurrency
     runtime.GOMAXPROCS(runtime.NumCPU())
+
+    // XXX Create a GMX instance here with the socket we find in the
+    // config file.  What to do if the socket path is not specified?
+    // Use a default one?
 
     // Now create a new proxy instance for each listenr in the
     // config file
