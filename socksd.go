@@ -125,6 +125,7 @@ func newProxy(cfg configEntry, log *L.Logger, ul *urllog) (px *socksProxy, err e
     var addr net.Addr
 
     if len(cfg.Bind) > 0 {
+        log.Info("Binding to %s ..\n", cfg.Bind)
         addr, err = net.ResolveTCPAddr("tcp", cfg.Bind)
 
         if err != nil {
@@ -521,9 +522,10 @@ func (px *socksProxy) doConnect(lhs net.Conn) (rhs net.Conn, s string, err error
     d := &net.Dialer{LocalAddr: px.bind, Timeout: tout}
 
 
+
     rhs, err = d.Dial(t, s)
     if err != nil {
-        log.Err("%s failed to connect to %s: %s", ls, t, err)
+        log.Err("%s failed to connect to %s: %s", ls, s, err)
         buf[1] = 4
         lhs.Write(buf[:n])
         return
