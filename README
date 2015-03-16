@@ -7,7 +7,6 @@ by Go (golang.org).
 
 The server supports a simple JSON config file for its configuration.
 
-.. _Go: http://golang.org/
 
 Major features
 ==============
